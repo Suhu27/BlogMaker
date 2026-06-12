@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ article.title }}</title>
+    <style>
+        /* ============================================
+           BlogMaker Newsletter — Premium Clean Design
+           ============================================ */
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #111827;
+            background-color: #ffffff;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .newsletter-wrapper {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            background: #ffffff;
+        }
+
+        /* Header */
+        .header {
+            padding-bottom: 32px;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 40px;
+        }
+
+        .header-label {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+            color: #111827;
+        }
+
+        .header-date {
+            font-size: 14px;
+            color: #6b7280;
+            font-weight: 400;
+        }
+
+        /* Executive Summary */
+        .exec-summary {
+            background-color: #f9fafb;
+            padding: 24px 32px;
+            margin-bottom: 40px;
+            border-left: 3px solid #374151;
+        }
+
+        .exec-summary h2 {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #374151;
+            margin-bottom: 12px;
+        }
+
+        .exec-summary p {
+            font-size: 16px;
+            color: #374151;
+            line-height: 1.6;
+        }
+
+        /* Section headers */
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #111827;
+            margin: 48px 0 20px;
+            letter-spacing: -0.01em;
+        }
+
+        /* Main article */
+        .main-article {
+            font-size: 16px;
+            color: #374151;
+            line-height: 1.7;
+        }
+
+        .main-article p {
+            margin-bottom: 20px;
+        }
+
+        .main-article h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin: 32px 0 16px;
+        }
+        
+        .main-article ul, .main-article ol {
+            margin-bottom: 20px;
+            padding-left: 24px;
+        }
+        
+        .main-article li {
+            margin-bottom: 8px;
+        }
+
+        /* General lists */
+        .content-list {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 32px;
+        }
+
+        .content-list li {
+            font-size: 16px;
+            color: #374151;
+            margin-bottom: 12px;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .content-list li::before {
+            content: "—";
+            position: absolute;
+            left: 0;
+            color: #9ca3af;
+        }
+
+        /* Concepts */
+        .concepts-list li::before {
+            content: "•";
+        }
+
+        /* Counterpoints */
+        .counterpoint-section {
+            margin: 40px 0;
+            padding-top: 24px;
+            border-top: 1px solid #f3f4f6;
+        }
+
+        /* Sources Table */
+        .sources-section {
+            margin: 24px 0 48px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .source-item {
+            padding: 16px 0;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .source-title {
+            font-weight: 500;
+            color: #111827;
+            text-decoration: none;
+        }
+
+        .source-title:hover {
+            text-decoration: underline;
+        }
+        
+        .source-meta {
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .source-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 8px;
+            text-transform: uppercase;
+        }
+
+        .badge-tier1 {
+            background-color: #f3f4f6;
+            color: #374151;
+        }
+
+        .badge-tier2 {
+            background-color: #f9fafb;
+            color: #4b5563;
+        }
+
+        .badge-tier3 {
+            background-color: #ffffff;
+            color: #6b7280;
+            border: 1px solid #e5e7eb;
+        }
+
+        /* Reliability Score */
+        .reliability-box {
+            background-color: #f9fafb;
+            padding: 24px;
+            margin-top: 48px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .score-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 4px;
+        }
+
+        .score-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            margin-bottom: 12px;
+        }
+
+        .score-explanation {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.5;
+            max-width: 500px;
+            margin: 0 auto;
+            white-space: pre-line;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #9ca3af;
+            text-align: center;
+        }
+
+        /* Print / PDF styles */
+        @media print {
+            body {
+                background: #ffffff;
+            }
+            .newsletter-wrapper {
+                padding: 0;
+            }
+        }
+
+        @page {
+            margin: 2cm;
+            size: A4;
+        }
+    </style>
+</head>
+<body>
+    <div class="newsletter-wrapper">
+
+        <!-- Header -->
+        <div class="header">
+            <div class="header-label">Research Brief</div>
+            <h1>{{ article.title }}</h1>
+            <div class="header-date">{{ date }}</div>
+        </div>
+
+        <div class="content">
+
+            <!-- Executive Summary -->
+            {% if article.executive_summary %}
+            <div class="exec-summary">
+                <h2>Executive Summary</h2>
+                <p>{{ article.executive_summary }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Main Article -->
+            <div class="main-article">
+                {{ main_content_html | safe }}
+            </div>
+
+            <!-- Key Concepts -->
+            {% if article.key_concepts %}
+            <h2 class="section-title">Key Concepts</h2>
+            <ul class="content-list concepts-list">
+                {% for concept in article.key_concepts %}
+                <li>{{ concept }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <!-- Industry Impact -->
+            {% if article.industry_impact %}
+            <h2 class="section-title">Industry Impact</h2>
+            <div class="main-article">
+                <p>{{ article.industry_impact }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Career & Job Implications -->
+            {% if article.career_implications %}
+            <h2 class="section-title">Career Implications</h2>
+            <div class="main-article">
+                <p>{{ article.career_implications }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Counterpoints -->
+            {% if article.counterpoints %}
+            <div class="counterpoint-section">
+                <h2 class="section-title" style="margin-top: 0;">Counterpoints</h2>
+                <ul class="content-list">
+                    {% for cp in article.counterpoints %}
+                    <li>{{ cp }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Key Takeaways -->
+            {% if article.takeaways %}
+            <h2 class="section-title">Key Takeaways</h2>
+            <ul class="content-list">
+                {% for takeaway in article.takeaways %}
+                <li>{{ takeaway }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <!-- LinkedIn Content Ideas -->
+            {% if article.linkedin_ideas %}
+            <h2 class="section-title">Content Themes</h2>
+            <ul class="content-list">
+                {% for idea in article.linkedin_ideas %}
+                <li>{{ idea }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <!-- Topic Refinement -->
+            {% if article.topic_refinement %}
+            <div class="main-article" style="margin-top: 32px;">
+                <p><em>Research Note:</em> {{ article.topic_refinement }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Sources -->
+            {% if article.sources %}
+            <h2 class="section-title">Sources</h2>
+            <div class="sources-section">
+                {% for source in article.sources %}
+                <div class="source-item">
+                    <a href="{{ source.url }}" class="source-title" target="_blank">
+                        {{ source.title or source.domain or source.url }}
+                    </a>
+                    <div class="source-meta">
+                        {% if source.tier == 1 %}
+                        <span class="source-badge badge-tier1">Tier 1</span>
+                        {% elif source.tier == 2 %}
+                        <span class="source-badge badge-tier2">Tier 2</span>
+                        {% else %}
+                        <span class="source-badge badge-tier3">Tier 3</span>
+                        {% endif %}
+                        
+                        {% if source.publisher %}
+                        <span style="color: #374151; font-weight: 500;">{{ source.publisher }}</span> &middot; 
+                        {% endif %}
+                        
+                        {{ source.domain }}
+                        
+                        {% if source.publication_date %}
+                         &middot; {{ source.publication_date }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+        </div>
+
+        <!-- Reliability Score Footer -->
+        {% if article.reliability %}
+        <div class="reliability-box">
+            <div class="score-value">{{ article.reliability.score }}/10</div>
+            <div class="score-label">Source Reliability Score</div>
+            <div class="score-explanation">{{ article.reliability.explanation }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <div class="footer">
+            Generated by BlogMaker &middot; {{ date }}
+        </div>
+
+    </div>
+</body>
+</html>

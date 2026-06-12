@@ -1,0 +1,20 @@
+# Core AI
+google-genai>=1.0.0
+
+# Excel handling
+openpyxl>=3.1.0
+
+# Configuration
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# HTML rendering
+jinja2>=3.1.0
+
+# PDF generation (requires system GTK3/Pango/Cairo libs on Windows)
+weasyprint>=60.0
+
+# Email delivery
+resend>=2.0.0
+markdown>=3.4.0
+requests>=2.30.0

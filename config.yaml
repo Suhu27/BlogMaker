@@ -1,0 +1,165 @@
+# ============================================
+# BlogMaker -- Configuration
+# ============================================
+# Edit this file to customise newsletter behaviour.
+# No code changes required for any setting here.
+
+
+# --- Article Structure ---
+article_words: 750
+executive_summary_words: 150
+linkedin_angles: 3
+key_takeaways: 5
+counterpoints: 3
+key_concepts_count: 5
+
+
+# --- AI Model ---
+gemini_model: "gemini-2.5-pro"
+search_provider: "gemini"
+
+
+# --- Output Toggles ---
+enable_email: true
+enable_pdf: true
+enable_html: true
+enable_markdown: true
+
+
+# --- Email ---
+recipient_email: "kumar.raj560102@gmail.com"
+sender_email: "onboarding@resend.dev"
+email_subject_prefix: "Daily Research Brief"
+
+
+# --- File Paths ---
+topics_file: "topics.xlsx"
+output_dir: "output"
+log_dir: "logs"
+
+
+# --- Retry Settings ---
+max_retries: 3
+retry_delay_seconds: 2
+
+
+# --- Testing Mode ---
+# When true: generates all outputs and sends email, but NEVER marks topics as Done.
+testing_mode: false
+
+
+# --- Scheduler ---
+daily_run_time: "07:00"
+
+# Hard timeout for a single pipeline run (seconds).
+# If Gemini stalls and doesn't respond, the scheduler will abort after this
+# duration and leave the topic as Pending rather than hanging forever.
+pipeline_timeout_seconds: 600
+
+
+# --- Cost Tracking ---
+enable_cost_tracking: true
+
+
+# --- Practitioner Layer (Layer 2 Research) ---
+# When enabled, topics matching any keyword below trigger a second search
+# pass targeting YouTube talks, podcasts, Substack essays, and named expert
+# commentary -- sources that formal publications don't capture.
+# Set to false to skip Layer 2 entirely and save one API call per run.
+practitioner_layer_enabled: true
+
+# Topics containing any of these words will activate the practitioner layer.
+# Add or remove keywords freely -- no code changes needed.
+practitioner_topic_keywords:
+  - "job"
+  - "jobs"
+  - "employment"
+  - "workforce"
+  - "career"
+  - "work"
+  - "labor"
+  - "labour"
+  - "displacement"
+  - "automation"
+  - "future of work"
+  - "layoff"
+  - "hiring"
+  - "opinion"
+  - "debate"
+  - "controversy"
+  - "ethical"
+  - "ethics"
+  - "society"
+  - "societal"
+  - "regulation"
+  - "policy"
+  - "bias"
+  - "fairness"
+  - "safety"
+  - "alignment"
+  - "risk"
+
+
+# --- LinkedIn Post Persona ---
+# Describes the reader of the brief -- injected into the article prompt so
+# Gemini writes for this specific person, not a generic professional.
+# Update this if the target reader changes.
+linkedin_post_persona: >
+  Senior software engineer / solutions architect, ~50 years old,
+  deep SAP ecosystem background, current focus on AI in enterprise software,
+  Microsoft Copilot, and practical AI deployment at scale.
+  Reads this brief each morning then writes their own LinkedIn post.
+
+
+# --- Banned Phrases ---
+# These are injected into the article prompt as hard prohibitions.
+# The reader loses trust the moment they see any of these.
+# Add freely -- they are passed directly to Gemini's writing instructions.
+banned_phrases:
+  - "game-changer"
+  - "revolutionary"
+  - "transformative"
+  - "unlock potential"
+  - "unlock the power"
+  - "in today's fast-paced world"
+  - "in today's rapidly evolving"
+  - "leverage"
+  - "synergy"
+  - "paradigm shift"
+  - "cutting-edge"
+  - "state-of-the-art"
+  - "groundbreaking"
+  - "seamlessly"
+  - "empower"
+
+
+# --- Research Source Tiers ---
+# Injected into Gemini's research prompt at runtime.
+# Tier 1 = highest priority, Tier 4 = practitioner/community sources.
+# The practitioner layer (tier_4) only activates for opinion/society topics.
+# Add, remove, or reorder entries freely -- no code changes needed.
+
+preferred_source_tiers:
+  tier_1:
+    - "Official vendor documentation and engineering blogs (Microsoft learn.microsoft.com, techcommunity.microsoft.com, SAP news.sap.com, community.sap.com, Google Cloud Blog, AWS Blog, Anthropic, OpenAI, NVIDIA)"
+    - "SAP ecosystem publications (ASUG asug.com, SAPinsider, SAP News Center)"
+    - "Peer-reviewed academic papers (IEEE Xplore, ACM Digital Library, arXiv cs.AI / cs.SE / cs.IR)"
+    - "Technology analyst research (Gartner, Forrester, IDC)"
+
+  tier_2:
+    - "Enterprise tech journalism (InfoQ, The Register, ZDNet, Ars Technica, Computerworld, CIO.com)"
+    - "Business and financial press covering tech (Reuters, Bloomberg, Financial Times, Wall Street Journal)"
+    - "Respected tech publications (MIT Technology Review, Wired, VentureBeat, TechCrunch Enterprise)"
+    - "Consulting firm research (McKinsey Global Institute, Deloitte Insights, PwC, BCG)"
+
+  tier_3:
+    - "Long-form practitioner essays and newsletters (Stratechery, Import AI by Jack Clark, The Batch by Andrew Ng)"
+    - "Government and intergovernmental reports where relevant (OECD, IMF, World Bank, BLS, Eurostat)"
+    - "Think tank research (Brookings, NBER, Oxford Internet Institute)"
+    - "Company engineering blogs and official case studies"
+
+  tier_4:
+    - "YouTube talks and lectures from named AI/tech researchers (Andrej Karpathy, Geoffrey Hinton, Yann LeCun, Demis Hassabis, Fei-Fei Li, Andrew Ng)"
+    - "Podcast episodes with substantive expert discussion (Lex Fridman, No Priors, 80000 Hours, Hard Fork)"
+    - "Substack posts and newsletters from credible practitioners"
+    - "Long-form interviews where researchers speak in their own words (The Atlantic, Wired profiles)"
