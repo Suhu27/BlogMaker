@@ -12,6 +12,37 @@ from src.models import ReliabilityResult, Source
 
 logger = get_logger("reliability_scorer")
 
+# Promote to Tier 1 — genuine think tanks / standards bodies
+_TIER1_OVERRIDES = {
+    "carnegieendowment.org",   # Carnegie Endowment for International Peace
+    "brookings.edu",            # Brookings Institution
+    "rand.org",                 # RAND Corporation
+    "cisa.gov",                 # CISA — already Tier 1, confirm
+    "nist.gov",                 # NIST — already Tier 1, confirm
+    "enisa.europa.eu",          # ENISA — already Tier 1, confirm
+    "isc2.org",                 # ISC² — primary cybersecurity workforce research
+}
+
+# Demote to Tier 3 — marketing pages, career sites, trade press
+_TIER3_OVERRIDES = {
+    "cybersecurityguide.org",   # Career guide site
+    "aha.org",                  # Hospital association — not a cyber authority
+    "cyolo.io",                 # Security vendor blog
+    "zerothreat.ai",            # Security vendor statistics page
+    "sechard.com",              # Small vendor blog
+    "bravurasecurity.com",      # Vendor product page
+    "seraphicsecurity.com",     # Small vendor blog
+    "softwarestrategiesblog.com", # Personal blog
+}
+
+# microsoft.com scoring should distinguish:
+# - learn.microsoft.com → Tier 2 (official technical docs)
+# - microsoft.com/security/business/* → Tier 3 (product marketing)
+def score_microsoft_url(url: str) -> int:
+    if "learn.microsoft.com" in url or "techcommunity.microsoft.com" in url:
+        return 8  # Tier 2
+    return 5      # Tier 3 — product marketing
+
 
 # =============================================================================
 # Domain -> Score Mapping
@@ -300,7 +331,7 @@ class ReliabilityScorer:
         source_details: list[dict] = []
 
         for source in sources:
-            domain_score = self._score_domain(source.domain)
+            domain_score = self._score_domain(source.domain, source.url)
             publisher_score = self._score_publisher(source.publisher)
 
             # Take the highest score between domain and publisher match
@@ -366,7 +397,7 @@ class ReliabilityScorer:
             source_details=source_details,
         )
 
-    def _score_domain(self, domain: str) -> float:
+    def _score_domain(self, domain: str, url: str | None = None) -> float:
         """
         Look up a domain's reliability score.
 
@@ -381,7 +412,17 @@ class ReliabilityScorer:
 
         domain = domain.lower().strip()
 
-        # 1. Exact match
+        # Check microsoft.com URL specific scoring
+        if url and "microsoft.com" in url.lower():
+            return float(score_microsoft_url(url))
+
+        # Check overrides first (exact match)
+        if domain in _TIER1_OVERRIDES:
+            return 10.0
+        if domain in _TIER3_OVERRIDES:
+            return 5.0
+
+        # 1. Exact match in DOMAIN_SCORES
         if domain in DOMAIN_SCORES:
             return DOMAIN_SCORES[domain]
 
@@ -389,6 +430,10 @@ class ReliabilityScorer:
         parts = domain.split(".")
         for i in range(1, len(parts)):
             parent = ".".join(parts[i:])
+            if parent in _TIER1_OVERRIDES:
+                return 10.0
+            if parent in _TIER3_OVERRIDES:
+                return 5.0
             if parent in DOMAIN_SCORES:
                 return DOMAIN_SCORES[parent]
 

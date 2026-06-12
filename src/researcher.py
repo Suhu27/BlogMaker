@@ -11,6 +11,7 @@ Research strategy:
   4. Merge & deduplicate — all results combined into one research pool
 """
 
+import datetime
 import json
 import time
 import requests
@@ -112,6 +113,10 @@ class GeminiResearcher:
         )
         return research_text, all_sources
 
+    def _get_current_date_context(self) -> str:
+        now = datetime.date.today()
+        return f"Today's date is {now.strftime('%B %d, %Y')}. Focus on the most recent information available — 2025 and 2026 data preferred. Do not rely on 2023 or 2024 data unless nothing more recent exists."
+
     # ------------------------------------------------------------------
     # Step 1: Topic decomposition
     # ------------------------------------------------------------------
@@ -122,7 +127,10 @@ class GeminiResearcher:
         Each sub-query will be run as a separate grounded search, just like
         Perplexity decomposes questions before searching.
         """
-        decompose_prompt = f"""You are a research planner. Break the following topic into focused search queries.
+        date_context = self._get_current_date_context()
+        decompose_prompt = f"""You are a research planner. {date_context}
+
+Break the following topic into focused search queries.
 
 TOPIC: "{topic}"
 
@@ -169,9 +177,10 @@ Example format: ["query one", "query two", "query three"]"""
         Build a focused prompt for a single sub-query search.
         Keeps source quality guidance without biasing the angle.
         """
-        return f"""You are a senior research analyst.
+        date_context = self._get_current_date_context()
+        return f"""You are a senior research analyst. {date_context}
 
-Search for and summarise the most authoritative, recent information on:
+Search for and summarise the most authoritative, RECENT information on:
 "{query}"
 
 Context: this is part of broader research on "{original_topic}"
@@ -187,6 +196,14 @@ SOURCE QUALITY — prioritise in this order:
 
 DO NOT cite: career blogs, university course pages, vendor marketing landing pages,
 listicle SEO articles, or sources whose primary purpose is lead generation.
+
+CITATION RULES:
+- Always cite the PRIMARY source, not a secondary blog or article about it.
+- If a statistic comes from a Gartner report, cite gartner.com — not cybermagazine.com
+  writing about that Gartner report.
+- If a figure comes from ISC², Forrester, or IBM research, cite that report directly.
+- Vendor blog posts summarising analyst research are NOT acceptable citations for
+  the underlying data — find the original.
 
 Return:
 - Key findings with specific data, statistics, and named expert quotes
