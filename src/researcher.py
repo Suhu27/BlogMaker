@@ -4,12 +4,14 @@ Gemini-powered research module for BlogMaker.
 Uses Google Gemini with web-grounded search to research topics
 and extract citations from grounding metadata.
 
-Three-layer research strategy:
-  1. Primary search     — always runs; broad, faithful to the topic as given
-  2. Practitioner search — config-driven; fires for opinion/society topics
-  3. Fallback search    — fires only if grounding returns fewer than 3 sources
+Research strategy:
+  1. Query decomposition — Gemini breaks the topic into focused sub-queries
+  2. Fan-out search      — each sub-query runs as a separate grounded search
+  3. Practitioner search — config-driven; fires for opinion/society topics
+  4. Merge & deduplicate — all results combined into one research pool
 """
 
+import json
 import time
 import requests
 
@@ -48,101 +50,230 @@ class GeminiResearcher:
 
     def research_topic(self, topic: str) -> tuple[str, list[Source]]:
         """
-        Research a topic using a three-layer strategy.
+        Research a topic using fan-out search.
 
-        Layer 1 — Primary search (always runs):
-            Searches faithfully for the topic exactly as given.
-            If the topic is broad (e.g. "Cybersecurity Trends"), the search
-            is kept broad — no narrowing or reframing by the model.
-
-        Layer 2 — Practitioner search (config-driven, keyword-gated):
-            YouTube talks, Substack essays, podcast coverage, named expert
-            commentary. Only fires when the topic matches keywords defined
-            in config.yaml under practitioner_topic_keywords AND
-            practitioner_layer_enabled is true.
-
-        Layer 3 — Fallback search (runs only if total sources < 3):
-            Targets known authoritative domains directly when grounding
-            did not activate properly.
+        Step 1: Ask Gemini to decompose the topic into focused sub-queries.
+        Step 2: Run each sub-query as a separate grounded search.
+        Step 3: Optionally run practitioner search (config-driven).
+        Step 4: Merge all text and deduplicate all sources.
+        Step 5: Synthesise into a single coherent research summary.
         """
-        # --- Layer 1: Primary ---
-        prompt = self._build_research_prompt(topic)
-        research_text, sources = self._execute_search(prompt, topic)
-        logger.info("Primary search returned %d sources", len(sources))
+        # --- Step 1: Decompose topic into sub-queries ---
+        sub_queries = self._decompose_topic(topic)
+        logger.info("Topic decomposed into %d sub-queries: %s", len(sub_queries), sub_queries)
 
-        # --- Layer 2: Practitioner (config-driven) ---
+        # --- Step 2: Fan-out — run each sub-query separately ---
+        all_texts: list[str] = []
+        all_sources: list[Source] = []
+        seen_urls: set[str] = set()
+
+        for i, query in enumerate(sub_queries, 1):
+            logger.info("Running sub-query %d/%d: '%s'", i, len(sub_queries), query)
+            try:
+                text, sources = self._execute_search(
+                    self._build_subquery_prompt(query, topic), query
+                )
+                if text:
+                    all_texts.append(f"### Sub-query: {query}\n\n{text}")
+                for s in sources:
+                    if s.url and s.url not in seen_urls:
+                        seen_urls.add(s.url)
+                        all_sources.append(s)
+            except Exception as e:
+                logger.warning("Sub-query '%s' failed: %s", query, str(e))
+                continue
+
+        logger.info(
+            "Fan-out complete — %d sub-queries, %d unique sources",
+            len(sub_queries), len(all_sources),
+        )
+
+        # --- Step 3: Practitioner layer (config-driven) ---
         if self._topic_needs_practitioner_layer(topic):
-            logger.info(
-                "Topic '%s' flagged for practitioner layer — "
-                "running expert/video search...",
-                topic,
-            )
+            logger.info("Running practitioner layer for '%s'...", topic)
             practitioner_text, practitioner_sources = self._practitioner_search(topic)
             if practitioner_text:
-                research_text += (
-                    "\n\n--- Practitioner & Expert Perspectives ---\n\n"
-                    + practitioner_text
+                all_texts.append(
+                    "### Practitioner & Expert Perspectives\n\n" + practitioner_text
                 )
-            seen = {s.url for s in sources}
-            added = 0
             for s in practitioner_sources:
-                if s.url not in seen:
-                    seen.add(s.url)
-                    sources.append(s)
-                    added += 1
-            logger.info(
-                "Practitioner search added %d new sources (%d total)",
-                added, len(sources),
-            )
-        else:
-            logger.info(
-                "Practitioner layer skipped for '%s' "
-                "(no matching keywords or layer disabled in config)",
-                topic,
-            )
+                if s.url and s.url not in seen_urls:
+                    seen_urls.add(s.url)
+                    all_sources.append(s)
+            logger.info("After practitioner layer: %d total sources", len(all_sources))
 
-        # --- Layer 3: Fallback ---
-        if len(sources) < 3:
-            logger.info(
-                "Fewer than 3 sources total — issuing targeted fallback search..."
-            )
-            fallback_text, fallback_sources = self._targeted_search(topic)
-            if fallback_text:
-                research_text += (
-                    "\n\n--- Additional Sources ---\n\n" + fallback_text
-                )
-            seen = {s.url for s in sources}
-            for s in fallback_sources:
-                if s.url not in seen:
-                    seen.add(s.url)
-                    sources.append(s)
-            logger.info("After fallback: %d total sources", len(sources))
+        # --- Step 4: Synthesise all research into one summary ---
+        combined_raw = "\n\n---\n\n".join(all_texts)
+        research_text = self._synthesise(topic, combined_raw, all_sources)
 
-        return research_text, sources
+        logger.info(
+            "Research complete — %d words, %d sources",
+            len(research_text.split()), len(all_sources),
+        )
+        return research_text, all_sources
 
     # ------------------------------------------------------------------
-    # Practitioner layer gating — fully config-driven
+    # Step 1: Topic decomposition
+    # ------------------------------------------------------------------
+
+    def _decompose_topic(self, topic: str) -> list[str]:
+        """
+        Ask Gemini to break the topic into 4-6 focused search sub-queries.
+        Each sub-query will be run as a separate grounded search, just like
+        Perplexity decomposes questions before searching.
+        """
+        decompose_prompt = f"""You are a research planner. Break the following topic into focused search queries.
+
+TOPIC: "{topic}"
+
+Generate 4-6 search queries that together give comprehensive coverage of this topic.
+Rules:
+- Each query should target a distinct angle or sub-theme
+- Each query should be specific enough to return authoritative sources
+  (analyst reports, vendor docs, academic papers, or tier-1 tech journalism)
+- Do NOT overlap — each query should find different information
+- If the topic is broad (e.g. "Cybersecurity Trends"), generate queries covering
+  different themes within it
+- If the topic is specific (e.g. "SAP Joule vs Microsoft Copilot"), generate
+  queries covering different dimensions of that specific subject
+
+Return ONLY a JSON array of strings. No explanation, no markdown, just the array.
+Example format: ["query one", "query two", "query three"]"""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=decompose_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                ),
+            )
+            self._track_tokens(response)
+            raw = response.text or "[]"
+            queries = json.loads(raw)
+            if isinstance(queries, list) and len(queries) >= 2:
+                return [str(q) for q in queries[:6]]  # Cap at 6
+        except Exception as e:
+            logger.warning("Topic decomposition failed: %s — falling back to single search", str(e))
+
+        # Fallback: use topic as a single query
+        return [topic]
+
+    # ------------------------------------------------------------------
+    # Step 2: Sub-query search prompt
+    # ------------------------------------------------------------------
+
+    def _build_subquery_prompt(self, query: str, original_topic: str) -> str:
+        """
+        Build a focused prompt for a single sub-query search.
+        Keeps source quality guidance without biasing the angle.
+        """
+        return f"""You are a senior research analyst.
+
+Search for and summarise the most authoritative, recent information on:
+"{query}"
+
+Context: this is part of broader research on "{original_topic}"
+
+SOURCE QUALITY — prioritise in this order:
+1. Analyst research: Gartner, Forrester, IDC, McKinsey, Deloitte Insights
+2. Peer-reviewed: arXiv, IEEE Xplore, ACM Digital Library, MIT Technology Review
+3. Government / standards bodies: NIST, CISA, ENISA and relevant regulators
+4. Authoritative tech journalism: Ars Technica, The Register, InfoQ, ZDNet,
+   VentureBeat, TechCrunch, Computerworld, CIO.com
+5. Official vendor technical documentation, engineering blogs, threat intelligence
+   reports (not marketing pages)
+
+DO NOT cite: career blogs, university course pages, vendor marketing landing pages,
+listicle SEO articles, or sources whose primary purpose is lead generation.
+
+Return:
+- Key findings with specific data, statistics, and named expert quotes
+- Source attributions for every factual claim
+- Approximately 300-400 words"""
+
+    # ------------------------------------------------------------------
+    # Step 4: Synthesis
+    # ------------------------------------------------------------------
+
+    def _synthesise(
+        self, topic: str, combined_raw: str, sources: list[Source]
+    ) -> str:
+        """
+        Take all sub-query research results and synthesise into one
+        coherent, non-repetitive research summary.
+        """
+        if not combined_raw.strip():
+            return ""
+
+        source_list = "\n".join(
+            f"- [{s.title}]({s.url})" for s in sources if s.url
+        )
+
+        synthesis_prompt = f"""You are a senior research analyst. Below are research findings
+from multiple focused searches on the topic: "{topic}"
+
+Your task: synthesise all of this into ONE coherent research summary of approximately
+{self.config.article_words} words.
+
+Rules:
+- Do NOT repeat the same point from multiple sub-queries — merge and deduplicate
+- Preserve all specific data points, statistics, and named expert quotes
+- Maintain the breadth — if the sub-queries covered 5 different angles,
+  the summary must cover all 5
+- Cite sources using [1], [2] etc. referencing the source list below
+- Do NOT add new information not present in the raw research below
+
+AVAILABLE SOURCES (for citation numbering):
+{source_list}
+
+RAW RESEARCH FROM ALL SUB-QUERIES:
+{combined_raw}"""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=synthesis_prompt,
+                config=types.GenerateContentConfig(temperature=0.2),
+            )
+            self._track_tokens(response)
+            return response.text or combined_raw
+        except Exception as e:
+            logger.warning("Synthesis failed: %s — using raw combined text", str(e))
+            return combined_raw
+
+    # ------------------------------------------------------------------
+    # Practitioner layer
     # ------------------------------------------------------------------
 
     def _topic_needs_practitioner_layer(self, topic: str) -> bool:
-        """
-        Return True if the topic should trigger the practitioner layer.
-
-        Both conditions must be true:
-          1. practitioner_layer_enabled is true in config.yaml
-          2. The topic contains at least one keyword from
-             practitioner_topic_keywords in config.yaml
-
-        No keywords are hardcoded here — edit config.yaml to change behaviour.
-        """
         if not self.config.practitioner_layer_enabled:
             return False
         topic_lower = topic.lower()
         keywords = set(self.config.practitioner_topic_keywords)
         return any(kw in topic_lower for kw in keywords)
 
+    def _practitioner_search(self, topic: str) -> tuple[str, list[Source]]:
+        prompt = f"""Search for practitioner perspectives and expert commentary on: "{topic}"
+
+Find:
+- YouTube talks or lectures from credible researchers and engineers
+- Podcast episodes with substantive expert discussion
+- Substack essays from respected practitioners
+- Long-form interviews where named experts speak in their own words
+
+For each source: who the person is, their core argument, and the URL.
+Skip anonymous blogs and engagement-bait content."""
+
+        try:
+            return self._execute_search(prompt, f"{topic} (practitioner layer)")
+        except Exception as e:
+            logger.warning("Practitioner search failed: %s", str(e))
+            return "", []
+
     # ------------------------------------------------------------------
-    # Search execution
+    # Core search execution
     # ------------------------------------------------------------------
 
     def _execute_search(self, prompt: str, topic: str) -> tuple[str, list[Source]]:
@@ -156,23 +287,14 @@ class GeminiResearcher:
         last_error: Exception | None = None
         for attempt in range(1, self.config.max_retries + 1):
             try:
-                logger.info(
-                    "Researching '%s' (attempt %d/%d)...",
-                    topic, attempt, self.config.max_retries,
-                )
                 response = self.client.models.generate_content(
                     model=self.model,
                     contents=prompt,
                     config=research_config,
                 )
                 self._track_tokens(response)
-
                 research_text = response.text or ""
                 sources = self._extract_sources(response)
-                logger.info(
-                    "Search complete — %d words, %d sources",
-                    len(research_text.split()), len(sources),
-                )
                 return research_text, sources
 
             except Exception as e:
@@ -183,131 +305,12 @@ class GeminiResearcher:
                 )
                 if attempt < self.config.max_retries:
                     delay = self.config.retry_delay_seconds * (2 ** (attempt - 1))
-                    logger.info("Retrying in %d seconds...", delay)
                     time.sleep(delay)
 
         raise RuntimeError(
             f"Gemini research failed after {self.config.max_retries} attempts. "
             f"Last error: {last_error}"
         )
-
-    # ------------------------------------------------------------------
-    # Layer 2 — Practitioner search
-    # ------------------------------------------------------------------
-
-    def _practitioner_search(self, topic: str) -> tuple[str, list[Source]]:
-        """
-        Search for practitioner voices: YouTube talks, Substack essays,
-        podcast coverage, and commentary from named experts in AI/tech.
-        """
-        prompt = f"""Search for practitioner perspectives and expert commentary on: "{topic}"
-
-Find:
-- YouTube talks or lectures from credible researchers and engineers relevant to this topic
-- Podcast episodes with substantive expert discussion relevant to this topic
-- Substack essays or newsletters from respected practitioners who cover this topic
-- Long-form interviews where named experts speak in their own words
-- Opinion pieces from engineers or researchers with direct first-hand experience
-
-For each source:
-- State who the person is and why their perspective is credible
-- Summarise their core argument or finding
-- Note where credible voices agree or disagree
-- Include the URL
-
-Skip: anonymous blogs, engagement-bait content, people with no direct expertise."""
-
-        try:
-            text, sources = self._execute_search(
-                prompt, f"{topic} (practitioner layer)"
-            )
-            return text, sources
-        except Exception as e:
-            logger.warning("Practitioner search failed: %s", str(e))
-            return "", []
-
-    # ------------------------------------------------------------------
-    # Layer 3 — Targeted fallback
-    # ------------------------------------------------------------------
-
-    def _targeted_search(self, topic: str) -> tuple[str, list[Source]]:
-        """
-        Fallback search targeting authoritative domains directly.
-        Only runs when total sources < 3, indicating grounding did not
-        activate properly.
-        """
-        prompt = f"""Find authoritative, original-source articles on: "{topic}"
-
-Prioritise:
-- Official vendor documentation and engineering blogs (Microsoft, SAP, Google Cloud,
-  AWS, Salesforce, ServiceNow, Anthropic, OpenAI, NVIDIA)
-- Analyst firms: Gartner, Forrester, IDC
-- Peer-reviewed publications: IEEE Xplore, ACM Digital Library, arXiv
-- Enterprise tech journalism: InfoQ, The Register, ZDNet, Ars Technica,
-  VentureBeat, TechCrunch, Computerworld, CIO.com
-- SAP ecosystem: SAP News Center, ASUG, SAPinsider
-
-Return key findings and concrete data points. Skip aggregators and SEO content."""
-
-        try:
-            text, sources = self._execute_search(prompt, f"{topic} (fallback)")
-            return text, sources
-        except Exception as e:
-            logger.warning("Targeted fallback search failed: %s", str(e))
-            return "", []
-
-    # ------------------------------------------------------------------
-    # Prompt construction
-    # ------------------------------------------------------------------
-
-    def _build_research_prompt(self, topic: str) -> str:
-        """
-        Build the primary research prompt.
-
-        Key design principle: the prompt must not push Gemini toward any
-        particular angle. It anchors the topic firmly, then lets Gemini's
-        grounding decide what the most authoritative current sources are.
-        The more prescriptive the domain hints in the prompt, the more
-        Gemini drifts toward those hints instead of the actual topic.
-        """
-        return f"""You are a senior technology research analyst.
-
-YOUR TASK:
-Research the following topic and produce a comprehensive factual summary.
-
-TOPIC:
-"{topic}"
-
-CRITICAL INSTRUCTION — READ BEFORE SEARCHING:
-Search for this topic EXACTLY as written above. Do not rename it, reframe it,
-or decide that a more specific sub-angle would be more interesting.
-
-- If the topic is BROAD (e.g. "Cybersecurity Trends", "AI in Enterprise"),
-  keep the research BROAD. Cover all major themes with roughly equal depth.
-  Do NOT pick the most prominent current news angle and treat it as the whole topic.
-
-- If the topic contains the word "trends", you MUST identify and cover a minimum
-  of 4-5 distinct trends. Do not collapse them into one overarching narrative.
-
-- If the topic is SPECIFIC (e.g. "SAP Joule vs Microsoft Copilot"),
-  stay tightly focused on that specific comparison or question.
-
-- Vendor claims and independent analyst findings must be clearly separated.
-  Label which is which.
-
-WHAT TO FIND:
-- Recent, technically accurate information (last 12 months where possible)
-- Concrete data: statistics, version numbers, release dates, benchmark figures
-- Real-world deployment examples and enterprise case studies
-- Expert and analyst quotes with full attribution
-- Known limitations, open questions, and areas of active debate
-- Multiple perspectives — do not present only the consensus view
-
-SOURCES:
-Use whatever authoritative sources your search returns for this specific topic.
-Cite every factual claim so it can be verified.
-
-Provide a research summary of approximately {self.config.article_words} words."""
 
     # ------------------------------------------------------------------
     # Source extraction
@@ -321,7 +324,6 @@ Provide a research summary of approximately {self.config.article_words} words.""
         seen_urls: set[str] = set()
 
         if not response.candidates:
-            logger.warning("No candidates in response")
             return sources
 
         candidate = response.candidates[0]
@@ -343,33 +345,24 @@ Provide a research summary of approximately {self.config.article_words} words.""
                     if url and url not in seen_urls:
                         seen_urls.add(url)
 
-                        # Resolve Google grounding redirect URLs to real destination
                         if (
                             "google.com/url" in url
                             or "vertexaisearch.cloud.google.com" in url
                         ):
                             try:
-                                r = requests.head(
-                                    url, allow_redirects=True, timeout=5
-                                )
+                                r = requests.head(url, allow_redirects=True, timeout=5)
                                 url = r.url
                             except Exception as e:
-                                logger.debug(
-                                    "Failed to resolve redirect %s: %s", url, e
-                                )
+                                logger.debug("Failed to resolve redirect %s: %s", url, e)
 
-                        # Extract publisher from "Title - Publisher" or "Title | Publisher"
                         publisher = ""
                         if " - " in title:
                             publisher = title.split(" - ")[-1].strip()
                         elif " | " in title:
                             publisher = title.split(" | ")[-1].strip()
 
-                        sources.append(
-                            Source(url=url, title=title, publisher=publisher)
-                        )
+                        sources.append(Source(url=url, title=title, publisher=publisher))
 
-        logger.info("Extracted %d unique sources", len(sources))
         return sources
 
     # ------------------------------------------------------------------
@@ -377,17 +370,12 @@ Provide a research summary of approximately {self.config.article_words} words.""
     # ------------------------------------------------------------------
 
     def _track_tokens(self, response: types.GenerateContentResponse) -> None:
-        """Accumulate token usage for cost tracking."""
         if not self.config.enable_cost_tracking:
             return
         try:
             usage = response.usage_metadata
             if usage:
-                self._total_input_tokens += (
-                    getattr(usage, "prompt_token_count", 0) or 0
-                )
-                self._total_output_tokens += (
-                    getattr(usage, "candidates_token_count", 0) or 0
-                )
+                self._total_input_tokens += getattr(usage, "prompt_token_count", 0) or 0
+                self._total_output_tokens += getattr(usage, "candidates_token_count", 0) or 0
         except Exception:
             pass
