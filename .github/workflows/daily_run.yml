@@ -1,0 +1,51 @@
+name: Daily Newsletter Generator
+
+on:
+  schedule:
+    # 3:00 AM UTC is 7:00 AM Dubai Time (GST, UTC+4)
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub UI
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Required to push changes back to the repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0
+          
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+          
+      - name: Run BlogMaker
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # The below env variables allow configuring recipient/sender via GitHub Variables
+          # If they aren't set in GitHub Variables, it defaults to what's in config.yaml
+          RECIPIENT_EMAIL: ${{ vars.RECIPIENT_EMAIL }}
+          SENDER_EMAIL: ${{ vars.SENDER_EMAIL }}
+        run: python main.py
+        
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add topics.xlsx output/ logs/
+          # Only commit if there are changes
+          git diff --staged --quiet || git commit -m "chore: Update topics and save output [skip ci]"
+          git push
