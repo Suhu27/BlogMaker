@@ -157,15 +157,9 @@ def run_pipeline(config: AppConfig) -> None:
     report.article_word_count = len(article.main_content.split())
     logger.info("Article: '%s' (%d words)", article.title, report.article_word_count)
 
-    # --- Step 4: Calculate reliability score ---
-    logger.info("Step 4/9: Calculating reliability score...")
-    from src.reliability_scorer import ReliabilityScorer
-
-    scorer = ReliabilityScorer()
-    article.reliability = scorer.calculate_reliability(article.sources)
-    report.reliability_score = article.reliability.score
+    # --- Step 4: Count sources ---
+    logger.info("Step 4/9: Source scoring is disabled. Counting sources...")
     report.source_count = len(article.sources)
-    logger.info("Reliability score: %.1f/10", article.reliability.score)
 
     # --- Step 5: Render HTML ---
     logger.info("Step 5/9: Rendering HTML newsletter...")

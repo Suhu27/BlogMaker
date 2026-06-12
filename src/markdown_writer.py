@@ -122,20 +122,8 @@ def write_markdown(article: Article, output_path: str) -> None:
         lines.append("## Sources & Citations")
         lines.append("")
         for i, source in enumerate(article.sources, 1):
-            tier_label = f"Tier {source.tier}"
             title = source.title or source.domain or source.url
-            lines.append(f"{i}. [{title}]({source.url}) — {tier_label} (Score: {source.reliability_score})")
-        lines.append("")
-
-    # Reliability Score
-    if article.reliability:
-        lines.append("---")
-        lines.append("")
-        lines.append("## Reliability Score")
-        lines.append("")
-        lines.append(f"**{article.reliability.score}/10**")
-        lines.append("")
-        lines.append(article.reliability.explanation)
+            lines.append(f"{i}. [{title}]({source.url})")
         lines.append("")
 
     # Write to file

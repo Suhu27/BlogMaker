@@ -373,14 +373,6 @@
                         {{ source.title or source.domain or source.url }}
                     </a>
                     <div class="source-meta">
-                        {% if source.tier == 1 %}
-                        <span class="source-badge badge-tier1">Tier 1</span>
-                        {% elif source.tier == 2 %}
-                        <span class="source-badge badge-tier2">Tier 2</span>
-                        {% else %}
-                        <span class="source-badge badge-tier3">Tier 3</span>
-                        {% endif %}
-                        
                         {% if source.publisher %}
                         <span style="color: #374151; font-weight: 500;">{{ source.publisher }}</span> &middot; 
                         {% endif %}
