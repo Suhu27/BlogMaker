@@ -5,9 +5,9 @@ Uses Google Gemini with web-grounded search to research topics
 and extract citations from grounding metadata.
 
 Three-layer research strategy:
-  1. Primary search    — formal publications, vendor docs, analyst reports
-  2. Practitioner search — YouTube talks, Substack, podcasts, named experts
-  3. Fallback search   — fires only if grounding returns fewer than 3 sources
+  1. Primary search     — always runs; broad, faithful to the topic as given
+  2. Practitioner search — config-driven; fires for opinion/society topics
+  3. Fallback search    — fires only if grounding returns fewer than 3 sources
 """
 
 import time
@@ -48,16 +48,18 @@ class GeminiResearcher:
 
     def research_topic(self, topic: str) -> tuple[str, list[Source]]:
         """
-        Research a topic using a three-layer strategy:
+        Research a topic using a three-layer strategy.
 
         Layer 1 — Primary search (always runs):
-            Formal publications, vendor docs, analyst reports, academic papers.
+            Searches faithfully for the topic exactly as given.
+            If the topic is broad (e.g. "Cybersecurity Trends"), the search
+            is kept broad — no narrowing or reframing by the model.
 
         Layer 2 — Practitioner search (config-driven, keyword-gated):
             YouTube talks, Substack essays, podcast coverage, named expert
             commentary. Only fires when the topic matches keywords defined
-            in config.yaml under `practitioner_topic_keywords`, AND
-            `practitioner_layer_enabled` is true.
+            in config.yaml under practitioner_topic_keywords AND
+            practitioner_layer_enabled is true.
 
         Layer 3 — Fallback search (runs only if total sources < 3):
             Targets known authoritative domains directly when grounding
@@ -95,7 +97,7 @@ class GeminiResearcher:
         else:
             logger.info(
                 "Practitioner layer skipped for '%s' "
-                "(no matching keywords or layer disabled)",
+                "(no matching keywords or layer disabled in config)",
                 topic,
             )
 
@@ -119,7 +121,7 @@ class GeminiResearcher:
         return research_text, sources
 
     # ------------------------------------------------------------------
-    # Practitioner layer gating — reads from config, no hardcoding
+    # Practitioner layer gating — fully config-driven
     # ------------------------------------------------------------------
 
     def _topic_needs_practitioner_layer(self, topic: str) -> bool:
@@ -131,8 +133,7 @@ class GeminiResearcher:
           2. The topic contains at least one keyword from
              practitioner_topic_keywords in config.yaml
 
-        All keywords and the on/off toggle are config-driven —
-        no code change needed to adjust which topics trigger Layer 2.
+        No keywords are hardcoded here — edit config.yaml to change behaviour.
         """
         if not self.config.practitioner_layer_enabled:
             return False
@@ -198,36 +199,23 @@ class GeminiResearcher:
         """
         Search for practitioner voices: YouTube talks, Substack essays,
         podcast coverage, and commentary from named experts in AI/tech.
-
-        This layer captures opinion and nuance that formal publications miss —
-        e.g. Andrej Karpathy on automation, Geoffrey Hinton on job displacement,
-        engineers writing on Substack about what they actually observe.
         """
-        prompt = f"""Find practitioner perspectives, expert commentary, and \
-video/podcast content on: "{topic}"
+        prompt = f"""Search for practitioner perspectives and expert commentary on: "{topic}"
 
-Search specifically for:
-- YouTube talks and lectures from credible AI/tech researchers and engineers
-  (e.g. Andrej Karpathy, Yann LeCun, Geoffrey Hinton, Demis Hassabis, Sam Altman,
-  Fei-Fei Li, Andrew Ng — or whoever is most relevant to this specific topic)
-- Podcast episodes with substantive expert discussion (Lex Fridman Podcast,
-  No Priors, 80,000 Hours, Hard Fork, AI Breakdown, Bankless — relevant ones only)
-- Substack essays and newsletters from respected practitioners and researchers
-  (Import AI by Jack Clark, The Batch by Andrew Ng, Stratechery, Matt Levine
-  where relevant — whoever actually covers this topic)
-- Long-form interviews in MIT Technology Review, Wired, or The Atlantic where
-  researchers speak in their own words
-- Informed opinion pieces and essays from engineers or researchers with direct
-  first-hand experience of this topic
+Find:
+- YouTube talks or lectures from credible researchers and engineers relevant to this topic
+- Podcast episodes with substantive expert discussion relevant to this topic
+- Substack essays or newsletters from respected practitioners who cover this topic
+- Long-form interviews where named experts speak in their own words
+- Opinion pieces from engineers or researchers with direct first-hand experience
 
 For each source:
 - State who the person is and why their perspective is credible
-- Summarise their core argument or observation
-- Note if multiple credible voices agree or disagree on a key point
-- Include the URL if you can ground it
+- Summarise their core argument or finding
+- Note where credible voices agree or disagree
+- Include the URL
 
-Skip: anonymous blogs, engagement-bait opinion pieces, content from people with
-no direct expertise in the topic."""
+Skip: anonymous blogs, engagement-bait content, people with no direct expertise."""
 
         try:
             text, sources = self._execute_search(
@@ -244,26 +232,22 @@ no direct expertise in the topic."""
 
     def _targeted_search(self, topic: str) -> tuple[str, list[Source]]:
         """
-        Fallback search targeting known authoritative domains directly.
-        Only runs when grounding returned fewer than 3 sources total,
-        indicating grounding did not activate properly.
+        Fallback search targeting authoritative domains directly.
+        Only runs when total sources < 3, indicating grounding did not
+        activate properly.
         """
         prompt = f"""Find authoritative, original-source articles on: "{topic}"
 
-Search specifically for:
-- Official vendor documentation and engineering blogs:
-  Microsoft (learn.microsoft.com, techcommunity.microsoft.com),
-  SAP (news.sap.com, community.sap.com, help.sap.com),
-  Google Cloud Blog, AWS Machine Learning Blog, Salesforce Engineering,
-  ServiceNow Blog, Anthropic, OpenAI, NVIDIA Technical Blog
-- Analyst firms: Gartner, Forrester, IDC (press releases and summaries are fine)
-- Peer-reviewed and technical publications: IEEE Xplore, ACM Digital Library, arXiv
+Prioritise:
+- Official vendor documentation and engineering blogs (Microsoft, SAP, Google Cloud,
+  AWS, Salesforce, ServiceNow, Anthropic, OpenAI, NVIDIA)
+- Analyst firms: Gartner, Forrester, IDC
+- Peer-reviewed publications: IEEE Xplore, ACM Digital Library, arXiv
 - Enterprise tech journalism: InfoQ, The Register, ZDNet, Ars Technica,
-  VentureBeat, TechCrunch Enterprise, Computerworld, CIO.com
-- SAP ecosystem: SAP News Center, ASUG (asug.com), SAPinsider
+  VentureBeat, TechCrunch, Computerworld, CIO.com
+- SAP ecosystem: SAP News Center, ASUG, SAPinsider
 
-Return key findings and concrete data points from these sources only.
-Skip aggregators, listicles, and SEO-farm content."""
+Return key findings and concrete data points. Skip aggregators and SEO content."""
 
         try:
             text, sources = self._execute_search(prompt, f"{topic} (fallback)")
@@ -273,49 +257,57 @@ Skip aggregators, listicles, and SEO-farm content."""
             return "", []
 
     # ------------------------------------------------------------------
-    # Prompts
+    # Prompt construction
     # ------------------------------------------------------------------
 
     def _build_research_prompt(self, topic: str) -> str:
-        return f"""You are a senior technology research analyst covering enterprise \
-software, AI, and digital transformation.
+        """
+        Build the primary research prompt.
 
-TOPIC (use exactly as written — do NOT reinterpret or modify):
+        Key design principle: the prompt must not push Gemini toward any
+        particular angle. It anchors the topic firmly, then lets Gemini's
+        grounding decide what the most authoritative current sources are.
+        The more prescriptive the domain hints in the prompt, the more
+        Gemini drifts toward those hints instead of the actual topic.
+        """
+        return f"""You are a senior technology research analyst.
+
+YOUR TASK:
+Research the following topic and produce a comprehensive factual summary.
+
+TOPIC:
 "{topic}"
 
-RESEARCH INSTRUCTIONS:
-1. Search for the most recent, technically accurate information on this topic.
+CRITICAL INSTRUCTION — READ BEFORE SEARCHING:
+Search for this topic EXACTLY as written above. Do not rename it, reframe it,
+or decide that a more specific sub-angle would be more interesting.
 
-2. STRONGLY prioritize authoritative, original sources. For this domain:
-   - Official vendor sources:
-     Microsoft (learn.microsoft.com, techcommunity.microsoft.com),
-     SAP (news.sap.com, community.sap.com, help.sap.com),
-     Google Cloud Blog, AWS Blog, Salesforce, ServiceNow, Anthropic, OpenAI, NVIDIA
-   - Analyst firms: Gartner, Forrester, IDC
-   - Technical publications: IEEE Xplore, ACM Digital Library, arXiv (cs.AI, cs.SE, cs.IR)
-   - Enterprise tech journalism: InfoQ, The Register, ZDNet, Ars Technica,
-     VentureBeat, TechCrunch, Computerworld, CIO.com
-   - SAP ecosystem: ASUG (asug.com), SAPinsider, SAP News Center
-   - Do NOT rely on generic SEO content farms, listicle blogs, or unsourced aggregators
+- If the topic is BROAD (e.g. "Cybersecurity Trends", "AI in Enterprise"),
+  keep the research BROAD. Cover all major themes with roughly equal depth.
+  Do NOT pick the most prominent current news angle and treat it as the whole topic.
 
-3. Prioritize technical depth over breadth:
-   - Concrete specs, version numbers, release dates, and API/SDK names
-   - Benchmark figures and performance data where available
-   - Real enterprise deployment examples and case studies
-   - Vendor claims clearly separated from independent analyst assessments
+- If the topic contains the word "trends", you MUST identify and cover a minimum
+  of 4-5 distinct trends. Do not collapse them into one overarching narrative.
 
-4. Include:
-   - Specific data points, statistics, and official release notes
-   - Expert and analyst quotes with attribution
-   - Adoption challenges and enterprise integration considerations
-   - Known limitations, open issues, and areas of active development
-   - Recent announcements (within the last 12 months where possible)
+- If the topic is SPECIFIC (e.g. "SAP Joule vs Microsoft Copilot"),
+  stay tightly focused on that specific comparison or question.
 
-5. Cite every factual claim with its source so it can be verified.
+- Vendor claims and independent analyst findings must be clearly separated.
+  Label which is which.
 
-Provide a comprehensive research summary of approximately \
-{self.config.article_words} words with specific technical facts \
-and recent developments."""
+WHAT TO FIND:
+- Recent, technically accurate information (last 12 months where possible)
+- Concrete data: statistics, version numbers, release dates, benchmark figures
+- Real-world deployment examples and enterprise case studies
+- Expert and analyst quotes with full attribution
+- Known limitations, open questions, and areas of active debate
+- Multiple perspectives — do not present only the consensus view
+
+SOURCES:
+Use whatever authoritative sources your search returns for this specific topic.
+Cite every factual claim so it can be verified.
+
+Provide a research summary of approximately {self.config.article_words} words."""
 
     # ------------------------------------------------------------------
     # Source extraction

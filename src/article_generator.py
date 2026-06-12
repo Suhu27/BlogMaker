@@ -87,6 +87,15 @@ class ArticleGenerator:
                         logger.info("Regenerating due to structural issues...")
                         continue
 
+                # Topic fidelity check — reject if title reframes the topic
+                if self._title_drifted(article.title, topic):
+                    logger.warning(
+                        "Title drift detected: topic='%s', title='%s'. Regenerating...",
+                        topic, article.title,
+                    )
+                    if attempt < self.config.max_retries:
+                        continue
+
                 # Length enforcement — expansion happens after structural pass
                 article = self._enforce_length(article, topic, research_text, sources)
 
@@ -116,7 +125,7 @@ class ArticleGenerator:
         )
 
     # ------------------------------------------------------------------
-    # Validation & length enforcement
+    # Validation & fidelity checks
     # ------------------------------------------------------------------
 
     def _validate_structure(self, article: Article) -> list[str]:
@@ -144,6 +153,49 @@ class ArticleGenerator:
         if not article.title:
             issues.append("title is empty")
         return issues
+
+    def _title_drifted(self, title: str, topic: str) -> bool:
+        """
+        Return True if the generated title appears to have reframed the topic.
+
+        Logic: at least one meaningful word from the topic must appear in the
+        title. If zero topic words appear, the title has likely been reframed
+        into a completely different angle and should be regenerated.
+
+        Stop words (the, a, an, in, of, for, and, is, are, etc.) are excluded
+        so they don't produce false negatives.
+        """
+        STOP_WORDS = {
+            "the", "a", "an", "in", "of", "for", "and", "or", "is", "are",
+            "to", "on", "at", "it", "its", "this", "that", "with", "by",
+            "as", "be", "was", "were", "has", "have", "had", "not", "but",
+            "from", "into", "will", "can", "how", "why", "what", "when",
+        }
+        topic_words = {
+            w for w in topic.lower().split()
+            if w not in STOP_WORDS and len(w) > 3
+        }
+        title_lower = title.lower()
+
+        if not topic_words:
+            return False  # Topic is too short to check — pass it through
+
+        matches = sum(1 for w in topic_words if w in title_lower)
+        # If fewer than half the meaningful topic words appear in the title,
+        # flag as drift. For a 1-word topic any match is sufficient.
+        threshold = max(1, len(topic_words) // 2)
+        drifted = matches < threshold
+
+        if drifted:
+            logger.debug(
+                "Title drift check: topic_words=%s, matches=%d, threshold=%d",
+                topic_words, matches, threshold,
+            )
+        return drifted
+
+    # ------------------------------------------------------------------
+    # Length enforcement
+    # ------------------------------------------------------------------
 
     def _enforce_length(
         self,
@@ -237,8 +289,29 @@ Return ONLY the expanded article body text. No JSON wrapper, no extra section he
 (25+ years of enterprise experience) who reads it each morning and then writes \
 their own LinkedIn post based on it.
 
-TOPIC (use EXACTLY as written — do NOT reinterpret, broaden, or narrow):
+TOPIC — THIS IS THE SUBJECT OF THE ARTICLE:
 "{topic}"
+
+TITLE RULES — READ CAREFULLY:
+The article title must directly reflect the topic above.
+- The title must contain the core subject of the topic.
+- Do NOT rename, reframe, or find a "catchier angle."
+- If the topic is "{topic}", a title like "{topic}: What Enterprise Teams Need to Know in 2026"
+  is correct.
+- A title that replaces the topic entirely with a sub-theme or buzzword phrase is WRONG
+  and will be rejected.
+- Example of WRONG behaviour: topic is "Cybersecurity Trends" but title becomes
+  "The Agentic Era of Cybersecurity" — this replaces the topic with one sub-angle.
+- Example of CORRECT behaviour: topic is "Cybersecurity Trends" and title becomes
+  "Cybersecurity Trends in 2026: Five Shifts Reshaping Enterprise Security Posture."
+
+SCOPE RULES:
+- If the topic is BROAD (contains words like "trends", "overview", "state of",
+  "landscape", "future of"), the article MUST cover multiple distinct themes with
+  roughly equal depth. Minimum 4-5 themes for any "trends" topic.
+  Do NOT pick the loudest current news angle and write the whole article about it.
+- If the topic is SPECIFIC (a product comparison, a named technology, a named event),
+  stay tightly focused on that specific subject.
 
 RESEARCH DATA:
 {research_text}
@@ -260,7 +333,7 @@ READER PROFILE:
 INSTRUCTIONS:
 Write a structured newsletter article. Return valid JSON.
 
-CRITICAL LENGTH REQUIREMENTS:
+LENGTH REQUIREMENTS:
 - main_content: EXACTLY ~{self.config.article_words} words \
 (minimum {int(self.config.article_words * 0.9)})
 - executive_summary: ~{self.config.executive_summary_words} words
@@ -277,44 +350,30 @@ leave as empty string otherwise
 WRITING STYLE:
 - Tone: Direct, analytically credible, peer-to-peer — write for someone who will
   fact-check you
-- Do NOT use: "game-changer", "revolutionary", "transformative", "unlock potential",
-  "in today's fast-paced world", or any enterprise buzzwords — this reader will stop
-  reading the moment they see one
 - Clearly distinguish:
     (a) vendor marketing claims
     (b) independent analyst findings (Gartner, Forrester, IDC, academic papers)
-    (c) practitioner and expert opinion (named researchers, engineers, YouTube talks,
-        podcast commentary)
+    (c) practitioner and expert opinion (named researchers, engineers)
     (d) real-world deployment reports and case studies
-- For technical topics: include specific product names, version numbers, release dates,
-  and API/SDK names — e.g. "Copilot for Microsoft 365", "SAP S/4HANA 2023 FPS02",
-  not vague references like "Microsoft's AI tools"
-- For opinion/society topics: represent named expert voices faithfully, note where
-  credible people disagree, and avoid collapsing nuanced positions into a single view
+- For technical topics: use specific product names, version numbers, release dates —
+  never vague references like "Microsoft's AI tools"
 - Acknowledge known limitations, open questions, and where evidence is genuinely thin
+- Do NOT use: "game-changer", "revolutionary", "transformative", "unlock potential",
+  "in today's fast-paced world", "seamlessly", or enterprise buzzword phrases
 
 RESEARCH DATA NOTE:
-The RESEARCH DATA above may contain multiple sections — a primary research section,
-a "Practitioner & Expert Perspectives" section, and/or an "Additional Sources" section.
-Treat all of them as a single unified source pool. Do NOT reference or expose this
-section structure in the article itself. Weave formal sources and practitioner voices
-together naturally.
+The research data above may contain multiple sections. Treat them as a single unified
+source pool. Do not expose or reference the section structure in the article.
 
 CITATIONS:
-- Use inline citations [1], [2] throughout main_content referencing the provided sources
-- YouTube videos, podcast episodes, and Substack posts are valid citations — treat them
-  the same as articles
+- Use inline citations [1], [2] throughout main_content
 - End main_content with a '### References' section mapping each number to the exact
   source title from AVAILABLE SOURCES
 
 LINKEDIN IDEAS:
-Each linkedin_idea must be a concrete angle a senior enterprise practitioner would
-genuinely post about — grounded in a specific observation, data point, or honest opinion.
-
-  Good example: "What Karpathy's 'Software 2.0' framing actually means for how we
-  staff and skill SAP integration teams — and why most companies are getting this wrong"
-
-  Bad example: "AI is transforming enterprise software — here's what you need to know 🚀"
+Each linkedin_idea must be a concrete angle grounded in a specific observation,
+data point, or honest opinion — something a senior enterprise practitioner would
+actually post. No generic "AI is changing X" angles.
 
 Return a JSON object with these exact keys:
 {{
